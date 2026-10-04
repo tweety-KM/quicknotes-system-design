@@ -46,7 +46,13 @@ function createNoteItem(note) {
   const body = document.createElement("p");
   body.textContent = note.body || "";
 
-  li.append(title, body);
+  const del = document.createElement("button");
+  del.type = "button";
+  del.textContent = "Delete";
+  del.classList.add("delete-btn");
+  del.addEventListener("click", () => deleteNote(note.id, li, del));
+
+  li.append(title, body, del);
   return li;
 }
 
@@ -75,3 +81,72 @@ async function loadNotes() {
 }
 
 loadBtn.addEventListener("click", loadNotes);
+// ---------- POST: create a note ----------
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const title = titleInput.value.trim();
+  const body = bodyInput.value.trim();
+
+  // Validation: title is required (max 100 characters); body is optional
+  if (title === "") {
+    setStatus("Please enter a title.", "error");
+    return;
+  }
+  if (title.length > 100) {
+    setStatus("The title must be 100 characters or fewer.", "error");
+    return;
+  }
+
+  submitBtn.disabled = true;
+  setStatus("Creating note...", "loading");
+
+  try {
+    const { data: created, status } = await request(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: title, body: body, userId: 1 }),
+    });
+
+    // Remove the empty-state message if it is showing
+    const empty = list.querySelector(".empty-state");
+    if (empty) empty.remove();
+
+    list.prepend(createNoteItem(created));
+    setStatus(`Note created (status ${status}, id ${created.id}).`, "success");
+    form.reset();
+  } catch (error) {
+    setStatus("Could not create the note. Please try again.", "error");
+    console.error(error);
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+// ---------- DELETE: remove a note ----------
+
+// JSONPlaceholder is a fake API: it never really stores notes we create.
+// Real posts have ids 1 to 100. A note we create comes back with id 101,
+// which does not exist on the server, so a real DELETE for it would not be
+// meaningful. We therefore send DELETE only for real server notes (id <= 100)
+// and simply remove locally created notes from the page. A real backend would
+// store every note, so every delete would go to the server.
+const SERVER_NOTE_LIMIT = 100;
+
+async function deleteNote(id, li, button) {
+  button.disabled = true;
+  setStatus("Deleting note...", "loading");
+
+  try {
+    if (id <= SERVER_NOTE_LIMIT) {
+      await request(`${API_URL}/${id}`, { method: "DELETE" });
+    }
+
+    li.remove();
+    if (list.children.length === 0) showEmptyState();
+    setStatus(`Note ${id} deleted.`, "success");
+  } catch (error) {
+    button.disabled = false;
+    setStatus("Could not delete the note. Please try again.", "error");
+    console.error(error);
+  }
+}
